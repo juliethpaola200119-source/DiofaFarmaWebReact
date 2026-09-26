@@ -1,16 +1,26 @@
 /**
  * Componente de Layout: Header
- * 
+ *
  * Cabecera superior del sistema DioFaFarma.
- * Muestra el nombre oficial, información del usuario y botón preparado para logout.
+ * Muestra el nombre del usuario autenticado y permite cerrar sesión.
  */
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 import Button from '../common/Button';
 
 const Header = () => {
-  const { usuario, sistemaNombre, toggleSidebar, logout } = useAppContext();
+  const { usuario, sistemaNombre, toggleSidebar, cerrarSesion } = useAppContext();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    cerrarSesion();
+    navigate('/login', { replace: true });
+  };
+
+  // Inicial del nombre del usuario para el avatar
+  const inicial = usuario?.nombre ? usuario.nombre.charAt(0).toUpperCase() : 'U';
 
   return (
     <header className="app-header">
@@ -31,10 +41,10 @@ const Header = () => {
       </div>
 
       <div className="header-right">
-        {/* Perfil del usuario autenticado (preparado para el futuro) */}
+        {/* Perfil del usuario autenticado */}
         <div className="user-profile-widget">
           <div className="user-avatar" title={usuario?.nombre}>
-            {usuario?.nombre ? usuario.nombre.charAt(0) : 'U'}
+            {inicial}
           </div>
           <div className="user-info">
             <span className="user-name">{usuario?.nombre || 'Usuario'}</span>
@@ -42,12 +52,12 @@ const Header = () => {
           </div>
         </div>
 
-        {/* Botón preparado para cerrar sesión */}
+        {/* Botón cerrar sesión */}
         <Button
           variant="outline"
           size="sm"
-          onClick={logout}
-          title="Espacio preparado para cerrar sesión"
+          onClick={handleLogout}
+          title="Cerrar sesión"
         >
           Cerrar Sesión
         </Button>

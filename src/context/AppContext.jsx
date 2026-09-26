@@ -1,74 +1,115 @@
 /**
  * AppContext: Contexto Global de la Aplicación DioFaFarma
- * 
+ *
  * Gestiona el estado transversal del sistema mediante la Context API de React:
- * - Usuario y sesión (preparado para autenticación)
+ * - Sesión y autenticación (ahora conectada con la REST API)
  * - Nombre oficial del sistema
  * - Notificaciones / Alertas globales
  * - Control del Sidebar responsive
  */
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import * as authService from '../services/authService';
 
 const AppContext = createContext();
 
+// Clave para persistir la sesión en sessionStorage (se borra al cerrar el navegador)
+const SESSION_KEY = 'diofafarma_session';
+
 export const AppProvider = ({ children }) => {
-  // Información de usuario preparada para autenticación futura
-  const [usuario, setUsuario] = useState({
-    id: 1,
-    nombre: 'Farmacéutico Administrador',
-    email: 'admin@diofafarma.com',
-    rol: 'Administrador Farmacéutico'
-  });
+  // ── Estado de autenticación ──────────────────────────────────────────────
+  const [usuario, setUsuario] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true); // true mientras se restaura sesión
 
-  // Nombre oficial del sistema
+  // ── Estado de UI ─────────────────────────────────────────────────────────
   const sistemaNombre = 'DioFaFarma';
-
-  // Control de apertura del sidebar en pantallas pequeñas
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  // Alertas o notificaciones globales en la aplicación
   const [globalAlert, setGlobalAlert] = useState(null);
 
+  // ── Restaurar sesión al montar ───────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(SESSION_KEY);
+      if (stored) {
+        setUsuario(JSON.parse(stored));
+      }
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY);
+    } finally {
+      setAuthLoading(false);
+    }
+  }, []);
+
+  // ── Métodos de autenticación ─────────────────────────────────────────────
   /**
-   * Muestra una alerta global temporal
-   * @param {string} message - Texto del mensaje
-   * @param {'success'|'error'|'warning'|'info'} type - Tipo de alerta
-   * @param {number} timeout - Milisegundos antes de ocultarse (0 para persistente)
+   * Inicia sesión contra la REST API → MySQL
+   * @param {string} usuarioStr
+   * @param {string} password
+   * @returns {Promise<Object>} Datos del usuario autenticado
    */
+  const iniciarSesion = useCallback(async (usuarioStr, password) => {
+    const datos = await authService.login(usuarioStr, password);
+
+    // Construir el objeto de sesión con los datos que devuelve la API
+    const sesion = {
+      id:     datos.id,
+      nombre: datos.usuario,           // "usuario" de la API como nombre de display
+      email:  `${datos.usuario}@diofafarma.com`,
+      rol:    'Administrador Farmacéutico'
+    };
+
+    setUsuario(sesion);
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(sesion));
+    return sesion;
+  }, []);
+
+  /**
+   * Cierra la sesión actual, limpia el estado y el sessionStorage
+   */
+  const cerrarSesion = useCallback(() => {
+    setUsuario(null);
+    sessionStorage.removeItem(SESSION_KEY);
+    showAlert('Sesión cerrada correctamente', 'info');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Alertas globales ─────────────────────────────────────────────────────
   const showAlert = (message, type = 'success', timeout = 4000) => {
     setGlobalAlert({ message, type });
     if (timeout > 0) {
-      setTimeout(() => {
-        setGlobalAlert(null);
-      }, timeout);
+      setTimeout(() => setGlobalAlert(null), timeout);
     }
   };
 
-  const clearAlert = () => {
-    setGlobalAlert(null);
-  };
+  const clearAlert = () => setGlobalAlert(null);
 
-  const toggleSidebar = () => {
-    setSidebarOpen((prev) => !prev);
-  };
+  // ── Sidebar ───────────────────────────────────────────────────────────────
+  const toggleSidebar = () => setSidebarOpen((prev) => !prev);
 
-  // Espacio preparado para cerrar sesión en el futuro
-  const logout = () => {
-    showAlert('Sesión cerrada correctamente (simulación)', 'info');
-  };
+  // Alias logout para mantener compatibilidad con Header.jsx
+  const logout = cerrarSesion;
 
   const value = {
+    // Sesión
     usuario,
     setUsuario,
+    authLoading,
+    iniciarSesion,
+    cerrarSesion,
+    logout,
+    estaAutenticado: !!usuario,
+
+    // Sistema
     sistemaNombre,
+
+    // Sidebar
     sidebarOpen,
     setSidebarOpen,
     toggleSidebar,
+
+    // Alertas
     globalAlert,
     showAlert,
-    clearAlert,
-    logout
+    clearAlert
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

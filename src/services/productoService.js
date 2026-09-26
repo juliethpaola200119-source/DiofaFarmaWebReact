@@ -1,14 +1,17 @@
 /**
  * Servicio exclusivo para las operaciones de Productos en DioFaFarma.
- * 
- * Contiene la lógica de comunicación con la API REST de Java o almacenamiento simulado local.
+ *
+ * Contiene la lógica de comunicación con la REST API Node.js o almacenamiento simulado local.
  * NO contiene JSX, componentes ni lógica visual.
+ *
+ * La API responde con el formato:
+ *   { success: boolean, message: string, data: Object|Array }
  */
 
 import { httpClient, USE_MOCK_DATA } from './api';
 import { MOCK_PRODUCTOS } from '../data/mockProductos';
 
-// Clave para persistir datos simulados en el navegador
+// Clave para persistir datos simulados en el navegador (solo en modo mock)
 const STORAGE_KEY = 'diofafarma_mock_productos';
 
 // Helper para inicializar y obtener el almacén mock local
@@ -35,33 +38,35 @@ const saveLocalStore = (productos) => {
 const simulateNetworkDelay = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Normaliza un producto proveniente del backend Java (snake_case -> camelCase)
+ * Normaliza un producto proveniente de la API REST Node.js.
+ * La API ya devuelve camelCase desde el mapper del backend,
+ * pero mantenemos compatibilidad con snake_case por si acaso.
  */
 const mapFromBackend = (item) => ({
-  id: item.id,
-  codigo: item.codigo,
-  nombre: item.nombre,
-  descripcion: item.descripcion || '',
-  laboratorio: item.laboratorio || '',
+  id:           item.id,
+  codigo:       item.codigo,
+  nombre:       item.nombre,
+  descripcion:  item.descripcion  || '',
+  laboratorio:  item.laboratorio  || '',
   precioCompra: Number(item.precioCompra ?? item.precio_compra ?? 0),
-  precioVenta: Number(item.precioVenta ?? item.precio_venta ?? 0),
-  stock: Number(item.stock ?? 0),
-  estado: item.estado === true || item.estado === 'true' || item.estado === 1 || item.estado === '1'
+  precioVenta:  Number(item.precioVenta  ?? item.precio_venta  ?? 0),
+  stock:        Number(item.stock ?? 0),
+  estado:       item.estado === true || item.estado === 'true' || item.estado === 1 || item.estado === '1'
 });
 
 /**
- * Normaliza un producto de React para enviar al backend Java (camelCase -> snake_case)
+ * Normaliza un producto de React para enviar a la REST API.
+ * La API Node.js acepta tanto camelCase como snake_case, pero enviamos camelCase.
  */
 const mapToBackend = (producto) => ({
-  id: producto.id,
-  codigo: producto.codigo,
-  nombre: producto.nombre,
-  descripcion: producto.descripcion,
-  laboratorio: producto.laboratorio,
-  precio_compra: Number(producto.precioCompra),
-  precio_venta: Number(producto.precioVenta),
-  stock: Number(producto.stock),
-  estado: Boolean(producto.estado)
+  codigo:       producto.codigo,
+  nombre:       producto.nombre,
+  descripcion:  producto.descripcion,
+  laboratorio:  producto.laboratorio,
+  precioCompra: Number(producto.precioCompra),
+  precioVenta:  Number(producto.precioVenta),
+  stock:        Number(producto.stock),
+  estado:       Boolean(producto.estado)
 });
 
 /**
@@ -74,13 +79,15 @@ export const obtenerProductos = async () => {
     return getLocalStore().map(mapFromBackend);
   }
 
-  const data = await httpClient('/productos', { method: 'GET' });
-  return Array.isArray(data) ? data.map(mapFromBackend) : [];
+  // La API responde: { success: true, data: [...] }
+  const response = await httpClient('/productos', { method: 'GET' });
+  const lista = response?.data ?? response;
+  return Array.isArray(lista) ? lista.map(mapFromBackend) : [];
 };
 
 /**
  * Obtiene un producto individual por su ID
- * @param {number|string} id 
+ * @param {number|string} id
  * @returns {Promise<Object>}
  */
 export const obtenerProductoPorId = async (id) => {
@@ -96,29 +103,31 @@ export const obtenerProductoPorId = async (id) => {
     return mapFromBackend(found);
   }
 
-  const data = await httpClient(`/productos/${id}`, { method: 'GET' });
-  return mapFromBackend(data);
+  // La API responde: { success: true, data: {...} }
+  const response = await httpClient(`/productos/${id}`, { method: 'GET' });
+  const item = response?.data ?? response;
+  return mapFromBackend(item);
 };
 
 /**
  * Registra un nuevo producto en el sistema
- * @param {Object} producto 
+ * @param {Object} producto
  * @returns {Promise<Object>} Producto creado con su ID generado
  */
 export const crearProducto = async (producto) => {
   if (USE_MOCK_DATA) {
     await simulateNetworkDelay();
     const productos = getLocalStore();
-    
+
     // Generar nuevo ID
     const maxId = productos.reduce((max, p) => Math.max(max, Number(p.id) || 0), 0);
     const nuevoProducto = {
       ...producto,
       id: maxId + 1,
       precioCompra: Number(producto.precioCompra),
-      precioVenta: Number(producto.precioVenta),
-      stock: Number(producto.stock),
-      estado: Boolean(producto.estado)
+      precioVenta:  Number(producto.precioVenta),
+      stock:        Number(producto.stock),
+      estado:       Boolean(producto.estado)
     };
 
     const actualizados = [nuevoProducto, ...productos];
@@ -127,17 +136,19 @@ export const crearProducto = async (producto) => {
   }
 
   const payload = mapToBackend(producto);
-  const data = await httpClient('/productos', {
+  // La API responde: { success: true, data: {...} }
+  const response = await httpClient('/productos', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
-  return mapFromBackend(data);
+  const item = response?.data ?? response;
+  return mapFromBackend(item);
 };
 
 /**
  * Actualiza los datos de un producto existente
- * @param {number|string} id 
- * @param {Object} producto 
+ * @param {number|string} id
+ * @param {Object} producto
  * @returns {Promise<Object>}
  */
 export const actualizarProducto = async (id, producto) => {
@@ -147,7 +158,7 @@ export const actualizarProducto = async (id, producto) => {
     await simulateNetworkDelay();
     const productos = getLocalStore();
     const index = productos.findIndex((p) => Number(p.id) === numericId);
-    
+
     if (index === -1) {
       throw new Error(`No se encontró el producto con ID ${id} para actualizar.`);
     }
@@ -155,11 +166,11 @@ export const actualizarProducto = async (id, producto) => {
     const productoActualizado = {
       ...productos[index],
       ...producto,
-      id: numericId,
+      id:           numericId,
       precioCompra: Number(producto.precioCompra),
-      precioVenta: Number(producto.precioVenta),
-      stock: Number(producto.stock),
-      estado: Boolean(producto.estado)
+      precioVenta:  Number(producto.precioVenta),
+      stock:        Number(producto.stock),
+      estado:       Boolean(producto.estado)
     };
 
     productos[index] = productoActualizado;
@@ -168,16 +179,18 @@ export const actualizarProducto = async (id, producto) => {
   }
 
   const payload = mapToBackend({ ...producto, id: numericId });
-  const data = await httpClient(`/productos/${numericId}`, {
+  // La API responde: { success: true, data: {...} }
+  const response = await httpClient(`/productos/${numericId}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
   });
-  return mapFromBackend(data);
+  const item = response?.data ?? response;
+  return mapFromBackend(item);
 };
 
 /**
  * Elimina un producto por su ID
- * @param {number|string} id 
+ * @param {number|string} id
  * @returns {Promise<boolean>}
  */
 export const eliminarProducto = async (id) => {
@@ -187,7 +200,7 @@ export const eliminarProducto = async (id) => {
     await simulateNetworkDelay();
     const productos = getLocalStore();
     const filtrados = productos.filter((p) => Number(p.id) !== numericId);
-    
+
     if (filtrados.length === productos.length) {
       throw new Error(`Producto con ID ${id} no encontrado para eliminar.`);
     }
@@ -196,6 +209,7 @@ export const eliminarProducto = async (id) => {
     return true;
   }
 
+  // La API responde: { success: true, message: '...' } (sin data)
   await httpClient(`/productos/${numericId}`, { method: 'DELETE' });
   return true;
 };
